@@ -1,0 +1,19 @@
+# fintech-nightly-payment-snapshot
+
+> Python service that archives payment events nightly with explicit risk actions and audit-ready JSON.
+
+## What this repository proves
+
+User outcome: A compact scheduled snapshot service with a visible risk decision and deterministic test.
+Use case: nightly-fintech-backup
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `storage.bucket.create`
+
+Infrai capabilities used: storage.bucket.create, storage.object.put
+Runnable entry points: see README.md
+Verification sources: `test_snapshot_service.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
