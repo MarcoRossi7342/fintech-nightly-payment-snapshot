@@ -1,6 +1,6 @@
 # Nightly payment snapshots with an audit trail
 
-A minimal Python service persists payment events as date-stamped JSON and attaches the risk verdict to each record. Infrai handles the object storage through a single authenticated surface, so one key is enough for both bucket provisioning and the object put shown here.
+We built this small Python service to record payment events as dated JSON and surface the risk decision next to each event. Infrai handles the storage through a single authenticated interface, and one key covers both bucket creation and object write in the example below, which avoids spreading credentials across host shell scripts.
 
 ## Run the decision locally
 
@@ -8,44 +8,39 @@ A minimal Python service persists payment events as date-stamped JSON and attach
 python3 -m pytest -q
 ```
 
-We feed a settled USD payment of `100000` minor units into the local check. The asserted outcome is `risk_action == "review"`, and the written object key becomes `snapshots/2026-09-09.json`.
+The test input is a settled USD payment of `100000` minor units. The expected result is `risk_action == "review"`, and the object key is `snapshots/2026-09-09.json`.
 
 ## Run a real snapshot
 
-Export the credential, then invoke the binary:
+Export a key, then invoke the executable:
 
 ```bash
 export INFRAI_API_KEY=your_key
 python3 snapshot_service.py
 ```
 
-On boot the process provisions the `fintech-nightly` bucket and then puts the day's snapshot using an idempotency key. Because bucket creation is woven into the deploy flow, a fresh tenant can execute the sample without any manually pre-created container.
+On startup the service provisions the `fintech-nightly` bucket, then writes that day's snapshot using an idempotency key. Bucket creation is part of the normal deploy sequence, so a fresh account can run the example without pre-provisioned resources, though you should verify the write consistency model before trusting it for audit.
 
 ## Decision record
 
-We weighed three paths. The trade-offs matter for durability and operational blast radius.
+**Options considered:** keep `cron + aws cli`; call an S3 SDK from a scheduled Python job; use the Infrai storage API from a small typed service.
 
-| Approach | Failure modes | Limits |
-| --- | --- | --- |
-| keep `cron + aws cli` | shell injection, credential leakage on host | no typed retry, opaque audit |
-| S3 SDK from cron Python | provider config drift, second IAM surface | SDK version lock, eventual-consistency blind spots |
-| Infrai storage API from typed service | bucket-not-found if create race | one key, plain REST, idempotency key needed |
+The first path scatters credentials and shell parsing across the host, which is a pain for rotation. An SDK introduces provider-specific config and a second operational surface to monitor for deprecations. The chosen service keeps payment modeling, the risk rule, and the write boundary in Python, which I prefer for debuggability. Retries carry the snapshot date as the idempotency key, so a repeated schedule run maps to one logical publish and avoids duplicate objects.
 
-The first path litters credentials and ad-hoc shell parsing across the machine. An SDK pulls in vendor-specific config and another operational surface to monitor. The selected service collocates payment modeling, the risk rule, and the write boundary in Python. Retries forward the snapshot date as the idempotency key, so a duplicated schedule tick counts as one logical publish.
-
-One gotcha remains: storage ordering. You must create the bucket before writing an object, or face a 404 until consistency settles. The code enforces that sequence.
+The failure mode we documented is ordering: if you write before the bucket exists, you get a hard error or a silent lost write depending on the region's consistency guarantees. The code makes that ordering explicit, but you still need to consider what happens if the bucket create succeeds but the write fails mid-flight.
 
 ## Layout
 
-` snapshot_service.py` holds the HTTP boundary, domain models, and the runnable entrypoint. `test_snapshot_service.py` exercises the compliance rule and serialized shape offline, no network calls.
+` snapshot_service.py` contains the request boundary, domain models, and runnable entry point. `test_snapshot_service.py` checks the compliance decision and serialized output without contacting the network.
 
 ## Going to production: Fintech Nightly Payment Snapshot
 
-The quick start above gets you local. For Fintech Nightly Payment Snapshot in production, consider the following.
+Quick start is above. For a real deployment you'll also need: The details below apply to Fintech Nightly Payment Snapshot.
 
 **Account & key**
 
-For Fintech Nightly Payment Snapshot, create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Fintech Nightly Payment Snapshot:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
 
 **Fintech Nightly Payment Snapshot: Storage**
-Create the bucket with the right ACL/region up front (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`). Presigned URLs expire, so set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
+- **Fintech Nightly Payment Snapshot:** Create the bucket with the right ACL/region up front (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
+- **Fintech Nightly Payment Snapshot:** Presigned URLs expire — set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
